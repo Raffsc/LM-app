@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>☕ LMApp</title>
+  <title>☕ PausApp</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -20,6 +20,8 @@
       --text:     #f5e6d3;
       --muted:    #c4a882;
       --dim:      #6b5a4a;
+      --green:    #22c55e;
+      --red:      #ef4444;
     }
 
     html, body { height: 100%; background: var(--bg); }
@@ -62,7 +64,7 @@
     .dot-live {
       display: inline-block;
       width: 8px; height: 8px;
-      background: #22c55e;
+      background: var(--green);
       border-radius: 50%;
       margin-right: 6px;
       animation: blink 1.4s infinite;
@@ -80,6 +82,50 @@
       align-items: center;
     }
 
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Bottone notifiche ── */
+    .notif-btn {
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 16px;
+      cursor: pointer;
+      line-height: 1;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .notif-btn.granted  { border-color: var(--green);  background: rgba(34,197,94,0.12); }
+    .notif-btn.denied   { border-color: var(--red);    background: rgba(239,68,68,0.12);  opacity: 0.5; cursor: not-allowed; }
+    .notif-btn.default  { border-color: var(--orange); }
+
+    /* Tooltip */
+    .notif-btn::after {
+      content: attr(data-tip);
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: var(--bg-deep);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s;
+      font-family: Georgia, serif;
+    }
+
+    .notif-btn:hover::after { opacity: 1; }
+
     .user-btn {
       background: var(--border);
       color: var(--text);
@@ -89,6 +135,32 @@
       font-size: 14px;
       cursor: pointer;
       font-family: inherit;
+    }
+
+    /* ── Toast notifica in-app ── */
+    .toast {
+      position: fixed;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-12px);
+      background: var(--orange);
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 300;
+      opacity: 0;
+      transition: opacity 0.25s, transform 0.25s;
+      pointer-events: none;
+      white-space: nowrap;
+      max-width: 90vw;
+      text-align: center;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
     }
 
     /* ── Modal ── */
@@ -174,7 +246,6 @@
       box-shadow: 0 8px 32px rgba(249,115,22,0.40);
       font-family: inherit;
       transition: transform 0.1s, box-shadow 0.1s;
-      active: transform 0.95;
     }
 
     .big-btn:active { transform: scale(0.95); }
@@ -343,12 +414,68 @@
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useCallback } = React;
 
 const TEAM = ["Alexxx", "Enzos", "RaffSc"];
 const CIRCUMFERENCE = 2 * Math.PI * 70;
 const BREAK_DURATION = 15 * 60;
 
+/* ─────────────────────────────────────────────────────────────
+   Hook: gestione notifiche browser
+   Ritorna: { permission, requestPermission, notify }
+───────────────────────────────────────────────────────────── */
+function useNotifications() {
+  // "default" = non ancora chiesto, "granted" = ok, "denied" = bloccato
+  const [permission, setPermission] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+
+  // Chiede il permesso al sistema operativo (mostra il popup del browser)
+  const requestPermission = useCallback(async () => {
+    if (typeof Notification === "undefined") return;
+    if (permission === "denied") return; // non si può forzare, utente deve sbloccare dalle impostazioni
+    const result = await Notification.requestPermission();
+    setPermission(result);
+  }, [permission]);
+
+  // Crea e mostra una notifica di sistema
+  const notify = useCallback((title, body, options = {}) => {
+    if (permission !== "granted") return;
+    // Se il documento è in primo piano, la notifica è comunque utile su mobile
+    const n = new Notification(title, {
+      body,
+      icon: options.icon || "https://em-content.zobj.net/source/google/387/hot-beverage_2615.png",
+      badge: options.badge || "https://em-content.zobj.net/source/google/387/hot-beverage_2615.png",
+      tag: options.tag || "pausapp",        // sostituisce notifiche precedenti con stesso tag
+      renotify: options.renotify ?? false,
+      silent: options.silent ?? false,
+      ...options,
+    });
+
+    // Cliccando la notifica porta in primo piano la tab
+    n.onclick = () => { window.focus(); n.close(); };
+
+    // Auto-chiude dopo 8 secondi
+    setTimeout(() => n.close(), 8000);
+  }, [permission]);
+
+  return { permission, requestPermission, notify };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Componente Toast (notifica in-app come fallback)
+───────────────────────────────────────────────────────────── */
+function Toast({ message, visible }) {
+  return (
+    <div className={"toast" + (visible ? " show" : "")}>
+      {message}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   App principale
+───────────────────────────────────────────────────────────── */
 function PausaApp() {
   const [connected, setConnected]     = useState(false);
   const [currentUser, setCurrentUser] = useState("Alexxx");
@@ -358,8 +485,22 @@ function PausaApp() {
     secondsLeft: 0, joiners: [], message: "", history: [],
   });
 
-  const socketRef = useRef(null);
+  // Toast in-app (fallback visivo quando le notifiche non sono abilitate)
+  const [toast, setToast] = useState({ message: "", visible: false });
+  const toastTimer = useRef(null);
 
+  const showToast = useCallback((msg) => {
+    clearTimeout(toastTimer.current);
+    setToast({ message: msg, visible: true });
+    toastTimer.current = setTimeout(() => setToast(t => ({ ...t, visible: false })), 3500);
+  }, []);
+
+  const socketRef   = useRef(null);
+  const prevState   = useRef(state);          // snapshot dello stato precedente
+
+  const { permission, requestPermission, notify } = useNotifications();
+
+  // ── Connessione Socket.io ──
   useEffect(() => {
     const socket = window.io();
     socketRef.current = socket;
@@ -370,6 +511,50 @@ function PausaApp() {
 
     return () => socket.disconnect();
   }, []);
+
+  // ── Rilevamento cambiamenti di stato → notifica ──
+  useEffect(() => {
+    const prev = prevState.current;
+    const curr = state;
+
+    // Caso 1: pausa INIZIATA (qualcuno ha chiamato la pausa)
+    if (!prev.breakCaller && curr.breakCaller) {
+      const isMe = curr.breakCaller === currentUser;
+      const title = isMe ? "☕ Hai chiamato la pausa!" : `☕ ${curr.breakCaller} ha chiamato la pausa!`;
+      const body  = curr.message || "È ora di un caffè!";
+
+      notify(title, body, { tag: "break-start", renotify: true });
+
+      // Toast in-app come fallback (o in aggiunta)
+      if (!isMe) showToast(`${curr.breakCaller} ha chiamato la pausa! ☕`);
+    }
+
+    // Caso 2: pausa TERMINATA
+    if (prev.breakCaller && !curr.breakCaller) {
+      notify("💻 Pausa terminata", "È ora di tornare al lavoro!", {
+        tag: "break-end",
+        renotify: true,
+        silent: false,
+      });
+      showToast("💻 Pausa terminata — si torna al lavoro!");
+    }
+
+    // Caso 3: qualcuno si è UNITO alla pausa
+    if (
+      curr.breakCaller &&
+      curr.joiners.length > prev.joiners.length
+    ) {
+      const newJoiner = curr.joiners.find(j => !prev.joiners.includes(j));
+      if (newJoiner && newJoiner !== currentUser) {
+        notify(`☕ ${newJoiner} si è unito`, "Altro caffè in arrivo!", {
+          tag: `join-${newJoiner}`,
+          silent: true,     // silenziosa per non rompere le scatole
+        });
+      }
+    }
+
+    prevState.current = curr;
+  }, [state, currentUser, notify, showToast]);
 
   const emit = (event, data) => socketRef.current?.emit(event, data);
 
@@ -388,6 +573,14 @@ function PausaApp() {
     : 0;
   const dashOffset = CIRCUMFERENCE * (1 - progress / 100);
 
+  // Icona e tooltip del bottone notifiche
+  const notifIcon = permission === "granted" ? "🔔"
+                  : permission === "denied"  ? "🔕"
+                  : "🔔";
+  const notifTip  = permission === "granted" ? "Notifiche attive"
+                  : permission === "denied"  ? "Bloccate — sblocca dalle impostazioni browser"
+                  : "Attiva notifiche";
+
   if (!connected) {
     return (
       <div className="connecting">
@@ -399,6 +592,9 @@ function PausaApp() {
 
   return (
     <>
+      {/* Toast in-app */}
+      <Toast message={toast.message} visible={toast.visible} />
+
       {/* Header */}
       <div className="header">
         <div>
@@ -408,9 +604,21 @@ function PausaApp() {
             live
           </div>
         </div>
-        <button className="user-btn" onClick={() => setShowModal(true)}>
-          {currentUser} ▾
-        </button>
+        <div className="header-right">
+          {/* Bottone notifiche */}
+          <button
+            className={"notif-btn " + permission}
+            data-tip={notifTip}
+            onClick={requestPermission}
+            aria-label={notifTip}
+          >
+            {notifIcon}
+          </button>
+
+          <button className="user-btn" onClick={() => setShowModal(true)}>
+            {currentUser} ▾
+          </button>
+        </div>
       </div>
 
       {/* User modal */}
@@ -441,6 +649,17 @@ function PausaApp() {
             <button className="big-btn" onClick={callBreak}>
               CHIAMA LA PAUSA
             </button>
+
+            {/* Prompt notifiche se non ancora chiesto */}
+            {permission === "default" && (
+              <button
+                className="end-btn"
+                style={{ marginTop: 8, fontSize: 13 }}
+                onClick={requestPermission}
+              >
+                🔔 Attiva notifiche per riceverle in background
+              </button>
+            )}
           </div>
         ) : (
           <div className="active-box">
