@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>☕ PausApp</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #1a0f07;
+      --bg-deep:  #120a04;
+      --border:   #2d2013;
+      --orange:   #f97316;
+      --orange-d: #ea580c;
+      --text:     #f5e6d3;
+      --muted:    #c4a882;
+      --dim:      #6b5a4a;
+      --green:    #22c55e;
+      --red:      #ef4444;
+    }
+
+    html, body { height: 100%; background: var(--bg); }
+
+    body {
+      font-family: Georgia, 'Times New Roman', serif;
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+    }
+
+    #root {
+      width: 100%;
+      max-width: 480px;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-deep);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      font-size: 22px;
+      font-weight: bold;
+      color: var(--orange);
+      letter-spacing: 1px;
+    }
+
+    .dot-live {
+      display: inline-block;
+      width: 8px; height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      margin-right: 6px;
+      animation: blink 1.4s infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .connected-badge {
+      font-size: 12px;
+      color: var(--dim);
+      display: flex;
+      align-items: center;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .notif-btn {
+      background: var(--border);
+      border: 1px solid var(--orange);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 16px;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .notif-btn.granted { border-color: var(--green); background: rgba(34,197,94,0.12); }
+    .notif-btn.denied  { border-color: var(--red);   background: rgba(239,68,68,0.12); opacity: 0.5; }
+
+    .user-btn {
+      background: var(--border);
+      color: var(--text);
+      border: 1px solid var(--orange);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .toast {
+      position: fixed;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-12px);
+      background: var(--orange);
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 300;
+      opacity: 0;
+      transition: opacity 0.25s, transform 0.25s;
+      pointer-events: none;
+      white-space: nowrap;
+      max-width: 90vw;
+      text-align: center;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.78);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      animation: fadeIn 0.15s ease;
+    }
+
+    @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+    .modal-box {
+      background: var(--bg);
+      border: 1px solid var(--orange);
+      border-radius: 16px;
+      padding: 24px;
+      width: 260px;
+    }
+
+    .modal-title {
+      color: var(--orange);
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    .modal-option {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 16px;
+      color: var(--dim);
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+
+    .modal-option.active { color: var(--orange); font-weight: bold; }
+    .modal-option:last-child { border-bottom: none; }
+
+    .main {
+      flex: 1;
+      padding: 24px 20px;
+      overflow-y: auto;
+    }
+
+    .idle-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding-top: 40px;
+    }
+
+    .idle-emoji { font-size: 72px; }
+    .idle-title { font-size: 26px; font-weight: bold; }
+    .idle-sub   { font-size: 15px; color: var(--dim); margin-bottom: 16px; }
+
+    .big-btn {
+      background: linear-gradient(135deg, var(--orange), var(--orange-d));
+      color: #fff;
+      border: none;
+      border-radius: 16px;
+      padding: 20px 48px;
+      font-size: 20px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      cursor: pointer;
+      box-shadow: 0 8px 32px rgba(249,115,22,0.40);
+      font-family: inherit;
+      transition: transform 0.1s;
+    }
+
+    .big-btn:active { transform: scale(0.95); }
+
+    .active-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      animation: slideUp 0.4s ease;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .alert-banner {
+      background: var(--orange);
+      border-radius: 12px;
+      padding: 14px 24px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .alert-text  { font-size: 20px; font-weight: bold; color: #fff; }
+    .caller-info { font-size: 15px; color: var(--muted); }
+    .caller-name { font-weight: bold; color: var(--orange); }
+
+    .timer-wrapper { position: relative; width: 160px; height: 160px; }
+    .timer-svg     { position: absolute; top: 0; left: 0; }
+
+    .timer-text {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px; font-weight: bold;
+      color: var(--orange);
+      font-family: 'Courier New', monospace;
+    }
+
+    .timer-track    { fill: none; stroke: var(--border); stroke-width: 8; }
+    .timer-progress {
+      fill: none; stroke: var(--orange); stroke-width: 8;
+      stroke-linecap: round;
+      transform-origin: center; transform: rotate(-90deg);
+      transition: stroke-dashoffset 1s linear;
+    }
+
+    .joiners-box  { width: 100%; }
+    .joiners-title { font-size: 13px; color: var(--dim); margin-bottom: 10px; text-align: center; }
+    .joiners-list  { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+
+    .chip { border-radius: 20px; padding: 6px 14px; font-size: 13px; font-weight: bold; transition: background 0.3s, color 0.3s; }
+    .chip.in  { background: var(--orange); color: #fff; }
+    .chip.out { background: var(--border); color: var(--dim); }
+
+    .actions { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+
+    .join-btn {
+      background: var(--orange); color: #fff; border: none;
+      border-radius: 12px; padding: 14px; font-size: 16px; font-weight: bold;
+      cursor: pointer; font-family: inherit;
+      box-shadow: 0 4px 16px rgba(249,115,22,0.3); transition: transform 0.1s;
+    }
+    .join-btn:active { transform: scale(0.97); }
+
+    .end-btn {
+      background: transparent; color: var(--dim);
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 12px; font-size: 14px; cursor: pointer; font-family: inherit;
+    }
+
+    .history-box   { border-top: 1px solid var(--border); padding: 20px 0 0; margin-top: 32px; }
+    .history-title { font-size: 13px; color: var(--dim); margin-bottom: 10px; }
+    .history-item  { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .history-user    { font-weight: bold; color: var(--orange); min-width: 70px; }
+    .history-time    { color: var(--muted); }
+    .history-joiners { color: var(--dim); font-size: 12px; }
+
+    .connecting {
+      position: fixed; inset: 0; background: var(--bg-deep);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 16px; z-index: 200;
+    }
+    .connecting-emoji { font-size: 48px; animation: spin 2s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .connecting-text { color: var(--dim); font-size: 16px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const TEAM = ["Alexxx", "Enzos", "RaffSc"];
+const CIRCUMFERENCE = 2 * Math.PI * 70;
+const BREAK_DURATION = 15 * 60;
+
+// ── Registra il Service Worker e restituisce il suo registro ────────────────
+var swRegistration = null;
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").then(function(reg) {
+    swRegistration = reg;
+    console.log("✅ Service Worker registrato");
+  }).catch(function(err) {
+    console.log("❌ SW errore:", err);
+  });
+}
+
+// ── Manda notifica tramite Service Worker (funziona in background) ──────────
+function sendNotification(title, body, tag) {
+  if (Notification.permission !== "granted") return;
+
+  // Metodo 1: tramite Service Worker (funziona in background su Android)
+  if (swRegistration) {
+    swRegistration.showNotification(title, {
+      body: body,
+      tag: tag || "pausapp",
+      icon: "https://em-content.zobj.net/source/google/387/hot-beverage_2615.png",
+      badge: "https://em-content.zobj.net/source/google/387/hot-beverage_2615.png",
+      renotify: true,
+      vibrate: [200, 100, 200],
+    });
+    return;
+  }
+
+  // Metodo 2: fallback con Notification API classica (quando app è in primo piano)
+  try {
+    var n = new Notification(title, { body: body, tag: tag || "pausapp" });
+    n.onclick = function() { window.focus(); n.close(); };
+    setTimeout(function() { n.close(); }, 8000);
+  } catch(e) {}
+}
+
+// ── App ─────────────────────────────────────────────────────────────────────
+function PausaApp() {
+  const [connected, setConnected]       = useState(false);
+  const [currentUser, setCurrentUser]   = useState("Alexxx");
+  const [showModal, setShowModal]       = useState(false);
+  const [notifPerm, setNotifPerm]       = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+  const [toastMsg, setToastMsg]         = useState("");
+  const [toastVisible, setToastVisible] = useState(false);
+  const [state, setState] = useState({
+    breakCaller: null, breakTime: null,
+    secondsLeft: 0, joiners: [], message: "", history: [],
+  });
+
+  const socketRef  = useRef(null);
+  const prevState  = useRef(null);
+  const toastTimer = useRef(null);
+
+  function showToast(msg) {
+    clearTimeout(toastTimer.current);
+    setToastMsg(msg);
+    setToastVisible(true);
+    toastTimer.current = setTimeout(function() { setToastVisible(false); }, 3500);
+  }
+
+  function handleNotifBtn() {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "denied") return;
+    Notification.requestPermission().then(function(result) {
+      setNotifPerm(result);
+    });
+  }
+
+  useEffect(function() {
+    var socket = window.io();
+    socketRef.current = socket;
+    socket.on("connect",    function() { setConnected(true); });
+    socket.on("disconnect", function() { setConnected(false); });
+    socket.on("state",      function(s) { setState(s); });
+    return function() { socket.disconnect(); };
+  }, []);
+
+  useEffect(function() {
+    var prev = prevState.current;
+    var curr = state;
+
+    if (prev !== null) {
+      // Pausa INIZIATA
+      if (!prev.breakCaller && curr.breakCaller) {
+        var titolo = curr.breakCaller === currentUser
+          ? "☕ Hai chiamato la pausa!"
+          : "☕ " + curr.breakCaller + " ha chiamato la pausa!";
+        sendNotification(titolo, curr.message || "È ora di un caffè!", "break-start");
+        if (curr.breakCaller !== currentUser) {
+          showToast(curr.breakCaller + " ha chiamato la pausa! ☕");
+        }
+      }
+      // Pausa TERMINATA
+      if (prev.breakCaller && !curr.breakCaller) {
+        sendNotification("💻 Pausa terminata", "Si torna al lavoro!", "break-end");
+        showToast("💻 Pausa terminata — si torna al lavoro!");
+      }
+      // Qualcuno si è UNITO
+      if (curr.breakCaller && curr.joiners.length > prev.joiners.length) {
+        var newJoiner = curr.joiners.find(function(j) { return !prev.joiners.includes(j); });
+        if (newJoiner && newJoiner !== currentUser) {
+          sendNotification("☕ " + newJoiner + " si è unito", "Altro caffè in arrivo!", "join");
+        }
+      }
+    }
+
+    prevState.current = curr;
+  }, [state]);
+
+  var emit      = function(ev, data) { if (socketRef.current) socketRef.current.emit(ev, data); };
+  var callBreak = function() { emit("callBreak", { user: currentUser }); };
+  var joinBreak = function() { emit("joinBreak", { user: currentUser }); };
+  var endBreak  = function() { emit("endBreak"); };
+
+  function formatTime(s) {
+    return Math.floor(s / 60).toString().padStart(2, "0") + ":" + (s % 60).toString().padStart(2, "0");
+  }
+
+  var progress   = state.secondsLeft > 0 ? ((BREAK_DURATION - state.secondsLeft) / BREAK_DURATION) * 100 : 0;
+  var dashOffset = CIRCUMFERENCE * (1 - progress / 100);
+  var notifIcon  = notifPerm === "granted" ? "🔔" : notifPerm === "denied" ? "🔕" : "🔔";
+  var notifClass = "notif-btn" + (notifPerm === "granted" ? " granted" : notifPerm === "denied" ? " denied" : "");
+
+  if (!connected) {
+    return (
+      <div className="connecting">
+        <span className="connecting-emoji">☕</span>
+        <span className="connecting-text">Connessione in corso…</span>
+      </div>
+    );
+  }
+
+  return (
+    <React.Fragment>
+      <div className={"toast" + (toastVisible ? " show" : "")}>{toastMsg}</div>
+
+      <div className="header">
+        <div>
+          <div className="logo">☕ PausApp</div>
+          <div className="connected-badge"><span className="dot-live" />live</div>
+        </div>
+        <div className="header-right">
+          <button className={notifClass} onClick={handleNotifBtn} title="Notifiche">{notifIcon}</button>
+          <button className="user-btn" onClick={() => setShowModal(true)}>{currentUser} ▾</button>
+        </div>
+      </div>
+
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">Chi sei?</div>
+            {TEAM.map(name => (
+              <div key={name} className={"modal-option" + (currentUser === name ? " active" : "")}
+                onClick={() => { setCurrentUser(name); setShowModal(false); }}>
+                {currentUser === name ? "✓  " : "    "}{name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="main">
+        {!state.breakCaller ? (
+          <div className="idle-box">
+            <span className="idle-emoji">🏢</span>
+            <span className="idle-title">Tutti al lavoro</span>
+            <span className="idle-sub">Sei pronto per una pausa?</span>
+            <button className="big-btn" onClick={callBreak}>CHIAMA LA PAUSA</button>
+            {notifPerm === "default" && (
+              <button className="end-btn" style={{marginTop: 8, fontSize: 13}} onClick={handleNotifBtn}>
+                🔔 Attiva notifiche
+              </button>
+            )}
+            {notifPerm === "denied" && (
+              <div style={{fontSize: 12, color: "var(--dim)", marginTop: 4, textAlign: "center"}}>
+                🔕 Notifiche bloccate — sblocca dalle impostazioni del browser
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="active-box">
+            <div className="alert-banner"><span className="alert-text">{state.message}</span></div>
+            <div className="caller-info">
+              <span className="caller-name">{state.breakCaller}</span> ha chiamato la pausa
+            </div>
+            <div className="timer-wrapper">
+              <svg className="timer-svg" width="160" height="160" viewBox="0 0 160 160">
+                <circle className="timer-track" cx="80" cy="80" r="70" />
+                <circle className="timer-progress" cx="80" cy="80" r="70"
+                  strokeDasharray={CIRCUMFERENCE} strokeDashoffset={dashOffset} />
+              </svg>
+              <div className="timer-text">{formatTime(state.secondsLeft)}</div>
+            </div>
+            <div className="joiners-box">
+              <div className="joiners-title">In pausa ({state.joiners.length}/{TEAM.length})</div>
+              <div className="joiners-list">
+                {TEAM.map(name => {
+                  var isIn = state.joiners.includes(name);
+                  return <div key={name} className={"chip " + (isIn ? "in" : "out")}>{isIn ? "☕" : "💻"} {name}</div>;
+                })}
+              </div>
+            </div>
+            <div className="actions">
+              {!state.joiners.includes(currentUser) && (
+                <button className="join-btn" onClick={joinBreak}>Unisciti alla pausa ☕</button>
+              )}
+              <button className="end-btn" onClick={endBreak}>Termina pausa</button>
+            </div>
+          </div>
+        )}
+
+        {state.history.length > 0 && (
+          <div className="history-box">
+            <div className="history-title">📋 Ultime pause</div>
+            {state.history.map((h, i) => (
+              <div key={i} className="history-item">
+                <span className="history-user">{h.caller}</span>
+                <span className="history-time">
+                  {new Date(h.time).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+                <span className="history-joiners">con {h.joiners.length} {h.joiners.length === 1 ? "persona" : "persone"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<PausaApp />);
+</script>
+</body>
+</html>
